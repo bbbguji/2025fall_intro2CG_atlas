@@ -33,6 +33,8 @@ uniform bool u_isUI;
 uniform bool u_useTexture; // 是顯示地圖(true) 還是玩家紅點(false)
 uniform vec4 u_uiColor;    // 純色模式的顏色
 
+uniform vec2 u_radarCenter;
+
 // 控制變數
 uniform bool u_isTerrain; 
 uniform vec3 u_baseColor; // 用於植被顏色
@@ -51,28 +53,47 @@ vec3 calculateWaveNormal(vec2 uv, float time) {
     return normalize(vec3(wave1 + wave3, 1.0, wave2 + wave3));
 }
 
+uniform bool u_isFullMap;
+
 void main() {
     // [新增] UI 渲染邏輯 (最優先處理)
     if (u_isUI) {
         if (u_useTexture) {
-            // ----------------------------------------------------
-            // 小地圖背景繪製 (圓形 + 彩色地形)
-            // ----------------------------------------------------
-            
-            // 1. 計算圓形遮罩
-            vec2 center = vec2(0.5, 0.5);
-            float dist = distance(TexCoords, center);
-            
-            // 如果超出半徑 0.5，完全透明 (裁切成圓形)
-            if (dist > 0.5) discard; 
+            vec2 sampleUV;
+            float alpha = 0.85;
 
-            // 2. 讀取高度並上色
-            float rawValue = texture(minimapTex, TexCoords).r; // 原始高度圖數值 (0~1)
+            if (u_isFullMap) {
+                // --- 全地圖模式 (方形、靜態、顯示整張圖) ---
+                sampleUV = vec2(TexCoords.x, 1.0 - TexCoords.y);
+                alpha = 0.95;         // 不透明度高一點
+            }
+            else{
+                // --- 小地圖模式 (圓形、雷達、跟隨玩家) ---
+                 // 1. 計算圓形遮罩
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(TexCoords, center);
+                
+                // 如果超出半徑 0.5，完全透明 (裁切成圓形)
+                if (dist > 0.5) discard; 
+
+                // 雷達捲動計算
+                sampleUV = u_radarCenter + (TexCoords - 0.5) * 0.5;
+                // 畫白框
+                if (dist > 0.48) {
+                    FragColor = vec4(1.0);
+                    return;
+                }
+            }
+
+
+            // 讀取高度並上色 (共用邏輯)
+            float rawValue = texture(minimapTex, sampleUV).r;
             
+            rawValue = max(0.0, rawValue - 0.08);
+
             // [重要] 還原真實世界高度，必須跟 main.cpp 一致
-            // h = pow(noise, 2.5) * meshHeight
             float meshHeight = 160.0; 
-            float worldH = pow(rawValue, 2.5) * meshHeight;
+            float worldH = pow(rawValue, 2.0) * meshHeight;
             
             vec3 mapColor;
             
@@ -99,23 +120,9 @@ void main() {
             // 3. 增加立體感 (偽陰影)
             // 利用 texture 數值的變化率來估算坡度
             float dH = fwidth(rawValue) * 20.0; 
-            mapColor -= vec3(dH); // 坡度越大越暗
+            mapColor -= vec3(dH); 
 
-            // 4. 繪製邊框與透明度
-            float borderThickness = 0.015; 
-            float alpha = 0.85; // 地圖預設透明度
-            
-            // 邊緣反鋸齒 (Anti-aliasing)
-            float delta = fwidth(dist);
-            float alphaCircle = 1.0 - smoothstep(0.5 - delta, 0.5, dist);
-            
-            // 畫白框
-            if (dist > 0.5 - borderThickness) {
-                mapColor = vec3(1.0);
-                alpha = 1.0;
-            }
-
-            FragColor = vec4(mapColor, alpha * alphaCircle);
+            FragColor = vec4(mapColor, alpha);
 
         } else {
             // --- 繪製玩家指標 (箭頭) ---
