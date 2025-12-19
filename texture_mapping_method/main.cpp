@@ -40,6 +40,8 @@ GLuint minimapVAO = 0, minimapVBO = 0;
 GLuint minimapTexture = 0;
 // 地圖邊界 (用於計算玩家比例位置)
 float mapMinX, mapMaxX, mapMinZ, mapMaxZ;
+bool showFullMap = false;      // 是否顯示大地圖
+bool mKeyPressed = false;      // 按鍵防彈跳用
 
 // --- 晝夜系統全域變數 ---
 enum class TimeOfDay { DAY = 0, DUSK = 1, NIGHT = 2, DAWN = 3 };
@@ -95,7 +97,7 @@ std::vector<float> generate_biome(const std::vector<float> &vertices, const std:
 void initMinimap();
 void drawMinimap(Shader &shader);
 void applyTimeOfDay(Shader &shader);
-
+void drawFullMap(Shader &shader);
 
 // --- 主程式 ---
 int main() {
@@ -103,7 +105,7 @@ int main() {
     if (init() != 0) return -1;
 
     // 1. 載入資源
-    load_heightmap_image("heightmap.png");
+    load_heightmap_image("./heightmap.png");
     initMinimap();
     Shader objectShader("shaders/objectShader.vert", "shaders/objectShader.frag");
     // 初始化光照 (取代原本寫死在 main 裡的 light 設定)
@@ -176,6 +178,10 @@ int main() {
         
         render(map_chunks, objectShader, view, model, projection, nIndices, tree_chunks, flower_chunks, waterVAO, waterIndicesCount);
         drawMinimap(objectShader);
+        
+        if (showFullMap) {
+            drawFullMap(objectShader); // 按 M 顯示的大地圖
+        }
 
         glfwPollEvents();
         glfwSwapBuffers(window);
@@ -230,7 +236,9 @@ std::vector<float> generate_vertices(const std::vector<float> &noise_map) {
         for (int x = 0; x < chunkWidth; x++) {
             v.push_back((float)x);
             // 高度非線性拉伸
-            float h = std::pow(noise_map[x + y*chunkWidth], 2.5f) * meshHeight;
+            float rawVal = noise_map[x + y*chunkWidth];
+            rawVal = std::max(0.0f, rawVal - 0.08f);
+            float h = std::pow(rawVal, 2.0f) * meshHeight;
             v.push_back(h);
             v.push_back((float)y);
             // UV 座標
@@ -621,32 +629,31 @@ void generate_map_chunk(GLuint &VAO, int xOffset, int yOffset, std::vector<plant
 }
 
 void initMinimap() {
-    // 1. 建立小地圖紋理 (使用 Heightmap 資料)
     glGenTextures(1, &minimapTexture);
     glBindTexture(GL_TEXTURE_2D, minimapTexture);
     
-    // 注意：heightMapData 是單通道 (Grayscale)，所以用 GL_RED
     if (heightMapData) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, hmWidth, hmHeight, 0, GL_RED, GL_UNSIGNED_BYTE, heightMapData);
         glGenerateMipmap(GL_TEXTURE_2D);
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    
+    // 使用 MIRRORED_REPEAT 配合地形生成的邏輯
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    // 2. 建立 UI 用的 Quad (正方形，座標 -0.5 ~ 0.5)
-    // 格式: PosX, PosY, PosZ,  Normal(無用),  Color(無用),  Offset(無用),  TexU, TexV
-    // 配合 Layout: 0:Pos, 1:Norm, 2:Col, 3:Off, 4:UV
+    // [修正] 恢復成標準的 Quad，不需要預先計算複雜的 UV
+    // 我們在 Shader 裡動態計算位移
     float quadVertices[] = {
-        // Positions        // Normals       // Colors        // Offset      // UV
-        -0.5f,  0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f, 1.0f, // 左上
-        -0.5f, -0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f, 0.0f, // 左下
-         0.5f, -0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  1.0f, 0.0f, // 右下
+        // Positions        // Normals       // Colors        // Offset      // UV (標準 0~1)
+        -0.5f,  0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f, 0.0f, // 左上
+        -0.5f, -0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f, 1.0f, // 左下
+         0.5f, -0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  1.0f, 1.0f, // 右下
 
-        -0.5f,  0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f, 1.0f, // 左上
-         0.5f, -0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  1.0f, 0.0f, // 右下
-         0.5f,  0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  1.0f, 1.0f  // 右上
+        -0.5f,  0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f, 0.0f, // 左上
+         0.5f, -0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  1.0f, 1.0f, // 右下
+         0.5f,  0.5f, 0.0f, 0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  0.0f,0.0f,0.0f,  1.0f, 0.0f  // 右上
     };
 
     glGenVertexArrays(1, &minimapVAO);
@@ -655,37 +662,11 @@ void initMinimap() {
     glBindBuffer(GL_ARRAY_BUFFER, minimapVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
 
-    // 設定 Layout (配合 objectShader.vert 的 input)
     int stride = 14 * sizeof(float);
-    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0); // Pos
-    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float))); // UV
-    // 其他 Layout 雖然 UI 用不到，但為了避免 Crash 還是可以設一下(或直接不Enable)
-    // 這裡我們只 Enable 0 和 4 即可，因為 Shader 裡的 UI 分支只用這兩個。
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float)));
 
     glBindVertexArray(0);
-
-    // [修正] 精確計算世界地圖邊界
-    // 根據 render 迴圈邏輯：
-    // 第一塊 Chunk (0,0) 的中心是 (-chunkWidth/2, -chunkHeight/2)
-    // 但我們需要的是整個地圖的「最左上角」到「最右下角」的頂點座標
-    
-    // Chunk 0 的左邊界 (Local x=0)
-    // WorldX = -chunkWidth/2.0f + (chunkWidth - 1) * 0 + 0 = -63.5
-    float startCoordX = -chunkWidth / 2.0f;
-    float startCoordZ = -chunkHeight / 2.0f;
-
-    // 最後一塊 Chunk (xMapChunks-1) 的右邊界 (Local x=127)
-    // WorldX = -chunkWidth/2.0f + (chunkWidth - 1) * (xMapChunks - 1) + (chunkWidth);
-    // 簡化公式：
-    float totalWidth = (chunkWidth - 1) * xMapChunks + 1; // 總寬度
-    float totalHeight = (chunkHeight - 1) * yMapChunks + 1;
-
-    mapMinX = startCoordX;
-    mapMaxX = startCoordX + totalWidth; // 約 2400 左右
-    mapMinZ = startCoordZ;
-    mapMaxZ = startCoordZ + totalHeight;
-    
-    std::cout << "[Info] Minimap Bounds: X[" << mapMinX << ", " << mapMaxX << "] Z[" << mapMinZ << ", " << mapMaxZ << "]" << std::endl;
 }
 
 void drawMinimap(Shader &shader) {
@@ -696,17 +677,22 @@ void drawMinimap(Shader &shader) {
     shader.use();
     shader.setBool("u_isUI", true); 
 
-    // ----------------------------
-    // 1. 繪製圓形地圖背景
-    // ----------------------------
+    // --- 1. 繪製地圖背景 (雷達模式) ---
     shader.setBool("u_useTexture", true);
     glActiveTexture(GL_TEXTURE6); 
     glBindTexture(GL_TEXTURE_2D, minimapTexture);
     shader.setInt("minimapTex", 6);
 
-    // 地圖參數
-    float mapScale = 0.35f; // 佔螢幕 35%
-    glm::vec3 mapCenterPos = glm::vec3(0.80f, 0.75f, 0.0f); // 右上角位置
+    // [關鍵] 計算玩家在圖片上的 UV 位置
+    // 因為 generate_noise_map 是 1:1 對應 heightmap pixel
+    // 所以直接除以圖片長寬即可
+    float centerU = camera.Position.x / (float)hmWidth;
+    float centerV = camera.Position.z / (float)hmHeight;
+    shader.setVec2("u_radarCenter", glm::vec2(centerU, centerV));
+
+    // 地圖位置與大小
+    glm::vec3 mapCenterPos = glm::vec3(0.80f, 0.75f, 0.0f);
+    float mapScale = 0.35f;
 
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, mapCenterPos); 
@@ -716,56 +702,21 @@ void drawMinimap(Shader &shader) {
     glBindVertexArray(minimapVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    // ----------------------------
-    // 2. 繪製玩家箭頭 (修正邊界問題)
-    // ----------------------------
+    // --- 2. 繪製玩家箭頭 (固定在中心) ---
     shader.setBool("u_useTexture", false);
-    shader.setVec4("u_uiColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)); // 紅色指標
+    shader.setVec4("u_uiColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
-    // A. 計算玩家在全地圖的比例 (0.0 ~ 1.0)
-    float mapW = mapMaxX - mapMinX;
-    float mapH = mapMaxZ - mapMinZ;
-    float ratioX = (camera.Position.x - mapMinX) / mapW;
-    float ratioZ = (camera.Position.z - mapMinZ) / mapH;
-
-    // B. 轉成相對於地圖中心的偏移量 (-0.5 ~ 0.5)
-    // 注意：這裡假設 Texture UV (0,0) 對應地圖 (MinX, MinZ)
-    glm::vec2 offset = glm::vec2(ratioX - 0.5f, ratioZ - 0.5f);
-
-    // C. [關鍵修正] 圓形限制 (Circular Clamping)
-    // 計算目前點到中心的距離
-    float dist = glm::length(offset);
-    float maxDist = 0.5f; // UV 空間的半徑 (0.5)
-    
-    // 如果超出半徑，就正規化向量並乘上最大半徑
-    // 這樣紅點就會「滑」在圓框邊緣，而不會消失或變成方形
-    if (dist > maxDist) {
-        offset = glm::normalize(offset) * maxDist;
-    }
-
-    // D. 轉回 UI 螢幕座標
-    float uiX = offset.x * mapScale; 
-    float uiY = offset.y * mapScale; 
-
-    // E. 繪製箭頭
+    // 箭頭直接畫在地圖中心 (因為地圖是隨著玩家動的)
     glm::mat4 pointModel = glm::mat4(1.0f);
-    // 移到地圖中心 + 偏移量
-    pointModel = glm::translate(pointModel, mapCenterPos + glm::vec3(uiX, uiY, 0.0f)); 
+    pointModel = glm::translate(pointModel, mapCenterPos); 
     
-    // 旋轉 (跟隨相機)
+    // 旋轉箭頭 (跟隨相機 Yaw)
     pointModel = glm::rotate(pointModel, glm::radians(-camera.Yaw - 90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    
-    // 縮放 (做成三角形箭頭)
     pointModel = glm::scale(pointModel, glm::vec3(0.02f, 0.03f, 1.0f)); 
     
     shader.setMat4("u_model", pointModel);
-    
-    // 這裡我們畫一個簡單的三角形 (使用原本 Quad 的前三個頂點)
-    // Quad 頂點是: 左上, 左下, 右下. 這構成一個直角三角形，有點醜
-    // 為了漂亮，我們建議畫完整的 Quad 但用縮放讓它看起來像長條指針，或者：
-    glDrawArrays(GL_TRIANGLES, 0, 6); // 還是畫長方形比較穩，因為我們沒有準備三角形的VAO
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    // --- 恢復狀態 ---
     shader.setBool("u_isUI", false); 
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
@@ -836,6 +787,76 @@ void applyTimeOfDay(Shader& sh) {
         sh.setVec3("light.direction", -0.2f, -1.0f, -0.3f); // 正午太陽
 }
 
+void drawFullMap(Shader &shader) {
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    shader.use();
+    shader.setBool("u_isUI", true); 
+    shader.setBool("u_isFullMap", true); // 告訴 Shader 這是全地圖
+
+    // --- 1. 繪製地圖背景 (螢幕中央大方形) ---
+    shader.setBool("u_useTexture", true);
+    glActiveTexture(GL_TEXTURE6); 
+    glBindTexture(GL_TEXTURE_2D, minimapTexture);
+    shader.setInt("minimapTex", 6);
+
+    // 螢幕置中，大小設為 1.5 (佔據大部分畫面)
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::scale(model, glm::vec3(1.5f, 1.5f, 1.0f)); 
+    shader.setMat4("u_model", model);
+    
+    glBindVertexArray(minimapVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // --- 2. 繪製玩家位置 (紅點) ---
+    shader.setBool("u_useTexture", false);
+    shader.setVec4("u_uiColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+
+    // [計算玩家在單張地圖上的 UV]
+    // 因為世界是無限鏡像拼接的，我們需要把玩家座標 "折疊" 回 0~1 的範圍
+    float u = camera.Position.x / (float)hmWidth;
+    float v = camera.Position.z / (float)hmHeight;
+
+    // 處理 GL_MIRRORED_REPEAT 的邏輯
+    // 偶數區塊 (0~1, 2~3...) 是正常，奇數區塊 (1~2, 3~4...) 是鏡像翻轉
+    float cycle = 2.0f;
+    float normU = std::abs(u); // 取絕對值
+    float normV = std::abs(v);
+    
+    // 取餘數 (0~2)
+    normU = fmod(normU, cycle);
+    normV = fmod(normV, cycle);
+
+    // 如果在 1~2 之間，要翻轉 (2 - val)
+    if (normU > 1.0f) normU = 2.0f - normU;
+    if (normV > 1.0f) normV = 2.0f - normV;
+
+    // 現在 normU, normV 就是玩家在愛心圖案上的 0~1 位置
+    
+    // 將 0~1 轉換為螢幕座標 (Quad 是 -0.5 ~ 0.5，且放大了 1.5 倍)
+    // 公式: (UV - 0.5) * Scale
+    float playerScreenX = (normU - 0.5f) * 1.5f;
+    float playerScreenY = (normV - 0.5f) * 1.5f; // 注意 V 軸方向
+
+    // 繪製紅點
+    glm::mat4 pointModel = glm::mat4(1.0f);
+    pointModel = glm::translate(pointModel, glm::vec3(playerScreenX, playerScreenY, 0.0f));
+    // 旋轉箭頭
+    pointModel = glm::rotate(pointModel, glm::radians(-camera.Yaw - 90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    pointModel = glm::scale(pointModel, glm::vec3(0.03f, 0.05f, 1.0f)); 
+    
+    shader.setMat4("u_model", pointModel);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // 恢復狀態
+    shader.setBool("u_isUI", false); 
+    shader.setBool("u_isFullMap", false); // 記得關掉，不然會影響小地圖
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+}
+
 int init() {
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -878,6 +899,14 @@ void processInput(GLFWwindow *window, Shader &shader) {
     if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
         gTimeOfDay = TimeOfDay::DAWN;
         applyTimeOfDay(shader);
+    }
+    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+        if (!mKeyPressed) {
+            showFullMap = !showFullMap;
+            mKeyPressed = true;
+        }
+    } else {
+        mKeyPressed = false;
     }
 }
 void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
