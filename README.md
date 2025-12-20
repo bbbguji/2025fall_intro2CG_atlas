@@ -33,6 +33,8 @@ use The AI Workflow and some texture mapping method plus some of the Method I to
 - Developed an interactive system with Visual Semantics and real-time control.
 - Successfully integrated Generative AI into the OpenGL rendering pipeline.
 ## Future Work:
+- Enhance season-specific terrain features (e.g., frozen lakes in winter, flowing rivers in spring, fallen leaves in autumn).
+- Introduce a dynamic weather system including rain, snow, and wind effects.
 - Integrate ControlNet for precise local feature control (e.g., river paths).
 - Implement Erosion Simulation and LOD (Level of Detail) techniques.
 ## Demo video
