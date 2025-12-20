@@ -2,9 +2,9 @@
 ## Introduction
 This is the **NYCU 2025 Fall Introduction to Computer Graphic Final project**. It is the modification of the Github repo [Altas](https://github.com/LiamHz/atlas) 
 ### perlin-based_atlas 
-adds some features and UI based on the original repo. See [Method I](https://github.com/timidtimmm/2025fall_intro2CG_atlas/new/main?filename=README.md#method-i---dynamic-environmentperlin-based_atlas)
+adds some features and UI based on the original repo. See Method I.
 ### texture_mapping_method
-use The AI Workflow and some texture mapping method plus some of the Method I to implement. See  [Method II](https://github.com/timidtimmm/2025fall_intro2CG_atlas/new/main?filename=README.md#method-ii---ai-assisted-terrain-pipelinetexture_mapping_method) 
+use The AI Workflow and some texture mapping method plus some of the Method I to implement. See  Method II. 
 ## Project Objectives
 - Visual Continuity & Realism:Smooth biome(生態系) transitions using linear interpolation (removing blocky artifacts).
 - High Interactivity: Real-time UI for adjusting Season, Time, and Humidity.
@@ -36,7 +36,7 @@ use The AI Workflow and some texture mapping method plus some of the Method I to
 - Integrate ControlNet for precise local feature control (e.g., river paths).
 - Implement Erosion Simulation and LOD (Level of Detail) techniques.
 ## Demo video
-[video]()
+[video](https://youtu.be/CMmSsixXJ4A)
 ## How to execute them?
 just execute
 ```
