@@ -10,6 +10,12 @@ use The AI Workflow and some texture mapping method plus some of the Method I to
 - High Interactivity: Real-time UI for adjusting Season, Time, and Humidity.
 - Radar Minimap for navigation.
 - AI-Assisted Workflow: A complete pipeline from Text-to-Image to 3D Terrain.
+## Project Structure
+This project can be viewed as a large-scale terrain generation system composed of two sub-projects:
+### Procedural Terrain Enhancement based on Perlin Noise (depth & breadth).
+(Method I)
+### AI-Assisted Terrain Generation focusing on semantic control and expressive power.
+(Based on part of Method I + Method II)
 ## Method I - Dynamic Environment(perlin-based_atlas)
 1. Dynamic Environment System:
 - Seasons: Cherry blossoms in Spring; Snow coverage in Winter...
@@ -46,8 +52,9 @@ g++ perlin-based_atlas/main.cpp perlin-based_atlas/lib/glad.c -Iinclude -Llib -l
 .\build\atlas.exe
 ```
 in each of the directory
-## Notice 
-**perlin-based_atlas** is based from the Github repo [Altas](https://github.com/LiamHz/atlas), and the **texture_mapping_method** is based from it, too. They are different but related. 
+
+
+
 
 
 
